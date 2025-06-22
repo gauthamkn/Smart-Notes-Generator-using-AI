@@ -32,22 +32,22 @@ class NotesProcessor {
     
     switch (format) {
       case 'summary':
-        content = this.generateSummaryNotes(transcript.content);
+        content = this.generateSummaryNotes(transcript.content, transcript.title);
         break;
       case 'bullets':
-        content = this.generateBulletNotes(transcript.content);
+        content = this.generateBulletNotes(transcript.content, transcript.title);
         break;
       case 'concepts':
-        content = this.generateConceptNotes(transcript.content);
+        content = this.generateConceptNotes(transcript.content, transcript.title);
         break;
       case 'qna':
-        content = this.generateQANotes(transcript.content);
+        content = this.generateQANotes(transcript.content, transcript.title);
         break;
       case 'outline':
-        content = this.generateOutlineNotes(transcript.content);
+        content = this.generateOutlineNotes(transcript.content, transcript.title);
         break;
       default:
-        content = this.generateSummaryNotes(transcript.content);
+        content = this.generateSummaryNotes(transcript.content, transcript.title);
     }
 
     return {
@@ -62,10 +62,31 @@ class NotesProcessor {
   }
 
   private extractKeywords(content: string): string[] {
+    // Remove common stop words
+    const stopWords = new Set([
+      'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
+      'this', 'that', 'these', 'those', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+      'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should',
+      'can', 'may', 'might', 'must', 'shall', 'from', 'up', 'out', 'down', 'off', 'over',
+      'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where',
+      'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other',
+      'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too',
+      'very', 'just', 'now', 'also', 'well', 'like', 'get', 'go', 'come', 'know',
+      'think', 'see', 'make', 'take', 'say', 'tell', 'give', 'find', 'use', 'work',
+      'call', 'try', 'ask', 'need', 'feel', 'become', 'leave', 'put', 'mean', 'keep',
+      'let', 'begin', 'seem', 'help', 'talk', 'turn', 'start', 'show', 'hear', 'play',
+      'run', 'move', 'live', 'believe', 'hold', 'bring', 'happen', 'write', 'provide',
+      'sit', 'stand', 'lose', 'pay', 'meet', 'include', 'continue', 'set', 'learn',
+      'change', 'lead', 'understand', 'watch', 'follow', 'stop', 'create', 'speak',
+      'read', 'allow', 'add', 'spend', 'grow', 'open', 'walk', 'win', 'offer', 'remember',
+      'love', 'consider', 'appear', 'buy', 'wait', 'serve', 'die', 'send', 'expect',
+      'build', 'stay', 'fall', 'cut', 'reach', 'kill', 'remain'
+    ]);
+
     const words = content.toLowerCase()
       .replace(/[^\w\s]/g, ' ')
       .split(/\s+/)
-      .filter(word => word.length > 4);
+      .filter(word => word.length > 3 && !stopWords.has(word));
     
     const frequency: { [key: string]: number } = {};
     words.forEach(word => {
@@ -74,204 +95,361 @@ class NotesProcessor {
 
     return Object.entries(frequency)
       .sort(([,a], [,b]) => b - a)
-      .slice(0, 8)
+      .slice(0, 10)
       .map(([word]) => word.charAt(0).toUpperCase() + word.slice(1));
   }
 
   private generateSummary(content: string): string {
-    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 10);
-    const summary = sentences.slice(0, 2).join('. ');
-    return summary.length > 100 ? summary.substring(0, 100) + '...' : summary;
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    if (sentences.length === 0) return content.substring(0, 150) + '...';
+    
+    // Take first 2-3 sentences or up to 200 characters
+    let summary = '';
+    for (let i = 0; i < Math.min(3, sentences.length); i++) {
+      const sentence = sentences[i].trim();
+      if (summary.length + sentence.length < 200) {
+        summary += sentence + '. ';
+      } else {
+        break;
+      }
+    }
+    
+    return summary.trim() || content.substring(0, 150) + '...';
   }
 
-  private generateSummaryNotes(content: string): string {
-    return `## Executive Summary
+  private extractMainTopics(content: string): string[] {
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    const topics: string[] = [];
+    
+    // Look for topic indicators
+    const topicIndicators = [
+      /(?:first|firstly|initially|to begin|starting with|let's start|we begin)/i,
+      /(?:second|secondly|next|then|following|after that|moving on)/i,
+      /(?:third|thirdly|another|also|additionally|furthermore|moreover)/i,
+      /(?:finally|lastly|in conclusion|to conclude|to summarize)/i,
+      /(?:important|key|main|primary|essential|crucial|significant)/i,
+      /(?:topic|subject|concept|idea|principle|theory|method|approach)/i
+    ];
 
-This lecture covers fundamental concepts and key insights that form the foundation of the subject matter. The discussion begins with an overview of core principles, followed by detailed explanations of critical components and their applications.
+    sentences.forEach(sentence => {
+      const trimmed = sentence.trim();
+      if (trimmed.length > 30 && trimmed.length < 150) {
+        // Check if sentence contains topic indicators
+        const hasTopicIndicator = topicIndicators.some(pattern => pattern.test(trimmed));
+        if (hasTopicIndicator || trimmed.split(' ').length < 20) {
+          topics.push(trimmed);
+        }
+      }
+    });
 
-## Key Points
-
-• **Primary Focus**: The main theme revolves around understanding complex interactions and relationships within the system
-• **Critical Insights**: Several breakthrough concepts were introduced that challenge conventional thinking
-• **Practical Applications**: Real-world examples demonstrate how theoretical knowledge translates into actionable strategies
-• **Future Implications**: The discussed concepts have significant potential for advancing current practices
-
-## Detailed Analysis
-
-The lecture systematically breaks down complex topics into digestible components, making advanced concepts accessible to learners at various levels. Special emphasis is placed on connecting theoretical frameworks with practical implementations.
-
-## Conclusion
-
-The presented material provides a comprehensive foundation for further study and practical application in professional settings.`;
+    return topics.slice(0, 8); // Return up to 8 main topics
   }
 
-  private generateBulletNotes(content: string): string {
-    return `## Main Topics
+  private extractKeyPoints(content: string): string[] {
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 15);
+    const keyPoints: string[] = [];
+    
+    // Look for sentences that seem to contain important information
+    sentences.forEach(sentence => {
+      const trimmed = sentence.trim();
+      const words = trimmed.toLowerCase();
+      
+      // Score sentences based on importance indicators
+      let score = 0;
+      
+      // Boost score for sentences with important keywords
+      const importantWords = ['important', 'key', 'main', 'primary', 'essential', 'crucial', 'significant', 'fundamental', 'basic', 'core'];
+      importantWords.forEach(word => {
+        if (words.includes(word)) score += 2;
+      });
+      
+      // Boost score for sentences with numbers or statistics
+      if (/\d+/.test(trimmed)) score += 1;
+      
+      // Boost score for sentences with definitions
+      if (words.includes('is') || words.includes('are') || words.includes('means') || words.includes('refers')) score += 1;
+      
+      // Prefer medium-length sentences
+      if (trimmed.length > 30 && trimmed.length < 200) score += 1;
+      
+      if (score >= 2 && trimmed.length > 20) {
+        keyPoints.push(trimmed);
+      }
+    });
 
-• **Introduction & Context**
-  - Historical background and development
-  - Current state of the field
-  - Relevance to modern applications
+    // If we don't have enough key points, add some well-formed sentences
+    if (keyPoints.length < 5) {
+      sentences.forEach(sentence => {
+        const trimmed = sentence.trim();
+        if (trimmed.length > 40 && trimmed.length < 150 && !keyPoints.includes(trimmed)) {
+          keyPoints.push(trimmed);
+        }
+      });
+    }
 
-• **Core Concepts**
-  - Fundamental principles and theories
-  - Key definitions and terminology
-  - Relationship between different components
-
-• **Technical Details**
-  - Specific methodologies and approaches
-  - Step-by-step processes
-  - Important formulas or frameworks
-
-• **Case Studies & Examples**
-  - Real-world applications
-  - Success stories and best practices
-  - Common challenges and solutions
-
-• **Advanced Topics**
-  - Cutting-edge research and developments
-  - Future trends and predictions
-  - Areas for further exploration
-
-• **Practical Implications**
-  - Implementation strategies
-  - Tools and resources available
-  - Skills and competencies required
-
-• **Assessment & Evaluation**
-  - Key metrics and indicators
-  - Quality assurance methods
-  - Continuous improvement approaches`;
+    return keyPoints.slice(0, 10);
   }
 
-  private generateConceptNotes(content: string): string {
-    return `## Fundamental Concepts
-
-### Core Principle #1: Systems Thinking
-Understanding how individual components interact within larger frameworks to create emergent properties and behaviors.
-
-### Core Principle #2: Evidence-Based Approach
-Utilizing data-driven methodologies to validate hypotheses and inform decision-making processes.
-
-### Core Principle #3: Adaptive Strategies
-Developing flexible approaches that can evolve with changing conditions and new information.
-
-## Key Relationships
-
-### Concept Interconnections
-- **Primary → Secondary**: How foundational concepts support advanced applications
-- **Theory ↔ Practice**: Bidirectional relationship between theoretical knowledge and practical implementation
-- **Individual ← → System**: The dynamic between component behavior and system-wide outcomes
-
-## Critical Success Factors
-
-### Technical Mastery
-Deep understanding of underlying mechanisms and their proper application in various contexts.
-
-### Strategic Thinking
-Ability to see beyond immediate challenges and consider long-term implications and opportunities.
-
-### Collaborative Approach
-Recognition that complex problems require diverse perspectives and coordinated efforts.
-
-## Implementation Framework
-
-### Phase 1: Foundation Building
-Establishing solid understanding of core concepts and their historical development.
-
-### Phase 2: Skill Development
-Practicing key techniques and methodologies through guided exercises and real-world applications.
-
-### Phase 3: Advanced Integration
-Combining multiple concepts to address complex, multi-faceted challenges.`;
+  private generateSummaryNotes(content: string, title: string): string {
+    const keyPoints = this.extractKeyPoints(content);
+    const mainTopics = this.extractMainTopics(content);
+    
+    let notes = `# ${title}\n\n## Executive Summary\n\n`;
+    
+    // Generate summary from first few sentences
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    if (sentences.length > 0) {
+      const summaryText = sentences.slice(0, 3).join('. ').trim() + '.';
+      notes += `${summaryText}\n\n`;
+    }
+    
+    if (mainTopics.length > 0) {
+      notes += `## Main Topics Covered\n\n`;
+      mainTopics.forEach((topic, index) => {
+        notes += `${index + 1}. ${topic}\n`;
+      });
+      notes += '\n';
+    }
+    
+    if (keyPoints.length > 0) {
+      notes += `## Key Points\n\n`;
+      keyPoints.forEach(point => {
+        notes += `• ${point}\n`;
+      });
+      notes += '\n';
+    }
+    
+    // Add conclusion
+    const lastSentences = sentences.slice(-2);
+    if (lastSentences.length > 0) {
+      notes += `## Conclusion\n\n${lastSentences.join('. ').trim()}.`;
+    }
+    
+    return notes;
   }
 
-  private generateQANotes(content: string): string {
-    return `## Key Questions & Answers
-
-### Q: What are the fundamental principles discussed in this lecture?
-**A:** The lecture covers several core principles including systems thinking, evidence-based approaches, and adaptive strategies. These form the foundation for understanding more complex applications and help bridge theoretical knowledge with practical implementation.
-
-### Q: How do these concepts apply to real-world scenarios?
-**A:** Real-world applications involve taking theoretical frameworks and adapting them to specific contexts. This requires understanding both the underlying principles and the unique constraints of each situation, leading to more effective and sustainable solutions.
-
-### Q: What are the most common challenges encountered when implementing these ideas?
-**A:** Common challenges include resistance to change, lack of proper resources, insufficient understanding of core concepts, and difficulty in measuring success. Overcoming these requires careful planning, stakeholder engagement, and continuous monitoring.
-
-### Q: What skills are essential for mastering this subject matter?
-**A:** Essential skills include analytical thinking, problem-solving, communication, collaboration, and adaptability. Technical competency must be balanced with soft skills to achieve optimal results in complex environments.
-
-### Q: How can one continue learning and staying current in this field?
-**A:** Continuous learning involves staying connected with professional communities, attending conferences, reading current research, participating in practical projects, and seeking mentorship from experienced practitioners.
-
-### Q: What are the future trends and developments to watch?
-**A:** Future developments are likely to focus on increased automation, integration of new technologies, greater emphasis on sustainability, and more personalized approaches to problem-solving.
-
-### Q: What resources are recommended for further study?
-**A:** Recommended resources include academic journals, professional organizations, online learning platforms, hands-on workshops, and networking opportunities with industry experts.`;
+  private generateBulletNotes(content: string, title: string): string {
+    const keyPoints = this.extractKeyPoints(content);
+    const mainTopics = this.extractMainTopics(content);
+    
+    let notes = `# ${title} - Key Points\n\n`;
+    
+    if (mainTopics.length > 0) {
+      notes += `## Main Topics\n\n`;
+      mainTopics.forEach(topic => {
+        notes += `• **${topic}**\n`;
+      });
+      notes += '\n';
+    }
+    
+    if (keyPoints.length > 0) {
+      notes += `## Important Points\n\n`;
+      keyPoints.forEach(point => {
+        notes += `• ${point}\n`;
+      });
+      notes += '\n';
+    }
+    
+    // Extract any numbered lists or structured content
+    const numberedItems = content.match(/\d+\.\s+[^.]+/g);
+    if (numberedItems && numberedItems.length > 0) {
+      notes += `## Structured Information\n\n`;
+      numberedItems.forEach(item => {
+        notes += `• ${item.replace(/^\d+\.\s*/, '')}\n`;
+      });
+    }
+    
+    return notes;
   }
 
-  private generateOutlineNotes(content: string): string {
-    return `# Lecture Outline
+  private generateConceptNotes(content: string, title: string): string {
+    const keyPoints = this.extractKeyPoints(content);
+    const keywords = this.extractKeywords(content);
+    
+    let notes = `# ${title} - Key Concepts\n\n`;
+    
+    // Extract definitions and explanations
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    const definitions: string[] = [];
+    const explanations: string[] = [];
+    
+    sentences.forEach(sentence => {
+      const trimmed = sentence.trim();
+      const lower = trimmed.toLowerCase();
+      
+      if (lower.includes(' is ') || lower.includes(' are ') || lower.includes(' means ') || lower.includes(' refers to ')) {
+        definitions.push(trimmed);
+      } else if (lower.includes('because') || lower.includes('therefore') || lower.includes('thus') || lower.includes('consequently')) {
+        explanations.push(trimmed);
+      }
+    });
+    
+    if (keywords.length > 0) {
+      notes += `## Key Terms\n\n`;
+      keywords.forEach(keyword => {
+        // Try to find context for each keyword
+        const contextSentence = sentences.find(s => 
+          s.toLowerCase().includes(keyword.toLowerCase()) && s.length < 200
+        );
+        if (contextSentence) {
+          notes += `### ${keyword}\n${contextSentence.trim()}\n\n`;
+        } else {
+          notes += `### ${keyword}\n*Key term mentioned in the content*\n\n`;
+        }
+      });
+    }
+    
+    if (definitions.length > 0) {
+      notes += `## Definitions & Explanations\n\n`;
+      definitions.slice(0, 5).forEach(def => {
+        notes += `• ${def}\n`;
+      });
+      notes += '\n';
+    }
+    
+    if (explanations.length > 0) {
+      notes += `## Cause & Effect Relationships\n\n`;
+      explanations.slice(0, 5).forEach(exp => {
+        notes += `• ${exp}\n`;
+      });
+    }
+    
+    return notes;
+  }
 
-## I. Introduction
-   A. Course objectives and learning outcomes
-   B. Historical context and background
-   C. Relevance to current industry practices
-   D. Overview of key topics to be covered
+  private generateQANotes(content: string, title: string): string {
+    const keyPoints = this.extractKeyPoints(content);
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    
+    let notes = `# ${title} - Q&A Format\n\n`;
+    
+    // Generate questions based on content
+    const questions: Array<{question: string, answer: string}> = [];
+    
+    // Look for question-like content or create questions from key points
+    keyPoints.forEach(point => {
+      if (point.includes('what') || point.includes('how') || point.includes('why') || point.includes('when') || point.includes('where')) {
+        // If the point is already a question, use it
+        questions.push({
+          question: point.endsWith('?') ? point : point + '?',
+          answer: 'Based on the content provided in the transcript.'
+        });
+      } else {
+        // Generate a question from the statement
+        let question = '';
+        const lower = point.toLowerCase();
+        
+        if (lower.includes(' is ') || lower.includes(' are ')) {
+          question = `What ${point.substring(point.toLowerCase().indexOf(' is ') + 4)}?`;
+        } else if (lower.includes('because') || lower.includes('due to')) {
+          question = `Why ${point.split(/because|due to/i)[0].trim()}?`;
+        } else {
+          question = `What can you tell me about: ${point.split(' ').slice(0, 8).join(' ')}?`;
+        }
+        
+        questions.push({
+          question: question,
+          answer: point
+        });
+      }
+    });
+    
+    // Add some general questions
+    questions.push({
+      question: `What is the main topic of "${title}"?`,
+      answer: sentences.length > 0 ? sentences[0].trim() : 'This content covers the main concepts and ideas presented in the transcript.'
+    });
+    
+    if (sentences.length > 2) {
+      questions.push({
+        question: 'What are the key takeaways from this content?',
+        answer: keyPoints.slice(0, 3).join(' ') || 'The key takeaways include the main concepts and practical applications discussed.'
+      });
+    }
+    
+    // Format as Q&A
+    questions.slice(0, 8).forEach((qa, index) => {
+      notes += `## Q${index + 1}: ${qa.question}\n\n**A:** ${qa.answer}\n\n`;
+    });
+    
+    return notes;
+  }
 
-## II. Theoretical Foundations
-   A. Core principles and concepts
-      1. Primary theoretical frameworks
-      2. Supporting research and evidence
-      3. Limitations and criticisms
-   B. Key terminology and definitions
-      1. Essential vocabulary
-      2. Technical specifications
-      3. Industry-standard nomenclature
-   C. Relationship to existing knowledge
-      1. Building on previous concepts
-      2. Contradictions with established theories
-      3. Areas of ongoing debate
-
-## III. Methodological Approaches
-   A. Research methodologies
-      1. Quantitative methods
-      2. Qualitative approaches
-      3. Mixed-method strategies
-   B. Data collection techniques
-      1. Primary data sources
-      2. Secondary data utilization
-      3. Data quality assurance
-   C. Analysis frameworks
-      1. Statistical approaches
-      2. Interpretive methods
-      3. Comparative analysis
-
-## IV. Practical Applications
-   A. Case study analysis
-      1. Successful implementations
-      2. Failed attempts and lessons learned
-      3. Best practices identification
-   B. Implementation strategies
-      1. Planning and preparation
-      2. Execution methodologies
-      3. Monitoring and evaluation
-   C. Tools and resources
-      1. Software and technology solutions
-      2. Human resource requirements
-      3. Financial considerations
-
-## V. Future Directions
-   A. Emerging trends and technologies
-   B. Research opportunities
-   C. Professional development pathways
-   D. Industry evolution predictions
-
-## VI. Conclusion
-   A. Summary of key points
-   B. Practical takeaways
-   C. Next steps for continued learning`;
+  private generateOutlineNotes(content: string, title: string): string {
+    const mainTopics = this.extractMainTopics(content);
+    const keyPoints = this.extractKeyPoints(content);
+    const sentences = content.split(/[.!?]+/).filter(s => s.trim().length > 20);
+    
+    let notes = `# ${title} - Detailed Outline\n\n`;
+    
+    notes += `## I. Introduction\n`;
+    if (sentences.length > 0) {
+      notes += `   A. ${sentences[0].trim()}\n`;
+      if (sentences.length > 1) {
+        notes += `   B. ${sentences[1].trim()}\n`;
+      }
+    }
+    notes += '\n';
+    
+    if (mainTopics.length > 0) {
+      mainTopics.forEach((topic, index) => {
+        const romanNumeral = ['II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'][index] || `${index + 2}`;
+        notes += `## ${romanNumeral}. ${topic}\n`;
+        
+        // Try to find related key points for this topic
+        const relatedPoints = keyPoints.filter(point => 
+          topic.toLowerCase().split(' ').some(word => 
+            word.length > 3 && point.toLowerCase().includes(word)
+          )
+        );
+        
+        if (relatedPoints.length > 0) {
+          relatedPoints.slice(0, 3).forEach((point, pointIndex) => {
+            const letter = String.fromCharCode(65 + pointIndex); // A, B, C...
+            notes += `   ${letter}. ${point}\n`;
+          });
+        } else {
+          notes += `   A. Key aspects and details\n   B. Practical applications\n`;
+        }
+        notes += '\n';
+      });
+    }
+    
+    // Add remaining key points as additional sections
+    const remainingPoints = keyPoints.filter(point => 
+      !mainTopics.some(topic => 
+        topic.toLowerCase().split(' ').some(word => 
+          word.length > 3 && point.toLowerCase().includes(word)
+        )
+      )
+    );
+    
+    if (remainingPoints.length > 0) {
+      const nextRoman = mainTopics.length > 0 ? 
+        ['II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX'][mainTopics.length] || `${mainTopics.length + 2}` : 
+        'II';
+      notes += `## ${nextRoman}. Additional Key Points\n`;
+      remainingPoints.slice(0, 5).forEach((point, index) => {
+        const letter = String.fromCharCode(65 + index);
+        notes += `   ${letter}. ${point}\n`;
+      });
+      notes += '\n';
+    }
+    
+    // Add conclusion
+    if (sentences.length > 2) {
+      const conclusionRoman = mainTopics.length > 0 ? 
+        ['III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][mainTopics.length] || `${mainTopics.length + 3}` : 
+        'III';
+      notes += `## ${conclusionRoman}. Conclusion\n`;
+      const lastSentences = sentences.slice(-2);
+      lastSentences.forEach((sentence, index) => {
+        const letter = String.fromCharCode(65 + index);
+        notes += `   ${letter}. ${sentence.trim()}\n`;
+      });
+    }
+    
+    return notes;
   }
 }
 
